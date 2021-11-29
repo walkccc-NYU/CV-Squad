@@ -4,11 +4,8 @@ images_384_VarV2/
 
 # Generated data
 generated/
-reflected*/
-preprocessed*/
-points_count.txt
-bboxes_dict.json
 
 # Others
 logs/
 __pycache__/
+output.jpg

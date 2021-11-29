@@ -1,8 +1,7 @@
-from collections import OrderedDict
+from typing import List
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision
 
 
@@ -25,48 +24,45 @@ class Resnet50FPN(nn.Module):
                 'map4': feature_4}
 
 
+class Conv(nn.Module):
+    def __init__(self, in_planes: int, out_planes: int, kernel_size: int, padding=0, use_bn=True):
+        super(Conv, self).__init__()
+        self.use_bn = use_bn
+        self.conv = nn.Conv2d(in_planes, out_planes,
+                              kernel_size, stride=1, padding=padding)
+        self.bn = nn.BatchNorm2d(out_planes)
+        self.relu = nn.ReLU(True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        # if self.use_bn:
+        #     x = self.bn(x)
+        x = self.relu(x)
+        return x
+
+
 class CountRegressor(nn.Module):
-    def __init__(self, input_channels, pool='mean'):
+    def __init__(self, in_planes: int, pool='mean'):
         super(CountRegressor, self).__init__()
         self.pool = pool
-        self.regressor = nn.Sequential(
-            nn.Conv2d(input_channels, 196, 7, padding=3),
-            nn.ReLU(),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-            nn.Conv2d(196, 128, 5, padding=2),
-            nn.ReLU(),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-            nn.Conv2d(128, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.UpsamplingBilinear2d(scale_factor=2),
-            nn.Conv2d(64, 32, 1),
-            nn.ReLU(),
-            nn.Conv2d(32, 1, 1),
-            nn.ReLU(),
-        )
+        self.upsampling = nn.UpsamplingBilinear2d(scale_factor=2)
+        self.conv1 = Conv(in_planes, 196, 7, padding=3)
+        self.conv2 = Conv(196, 128, 5, padding=2)
+        self.conv3 = Conv(128, 64, 3, padding=1)
+        self.conv4 = Conv(64, 32, 1)
+        self.conv5 = Conv(32, 1, 1, use_bn=False)
 
-    def forward(self, im):
-        num_sample = im.shape[0]
-        if num_sample == 1:
-            output = self.regressor(im.squeeze(0))
-            if self.pool == 'mean':
-                output = torch.mean(output, dim=(0), keepdim=True)
-                return output
-            elif self.pool == 'max':
-                output, _ = torch.max(output, 0, keepdim=True)
-                return output
-        else:
-            for i in range(0, num_sample):
-                output = self.regressor(im[i])
-                if self.pool == 'mean':
-                    output = torch.mean(output, dim=(0), keepdim=True)
-                elif self.pool == 'max':
-                    output, _ = torch.max(output, 0, keepdim=True)
-                if i == 0:
-                    Output = output
-                else:
-                    Output = torch.cat((Output, output), dim=0)
-            return Output
+    def forward(self, x: torch.Tensor, split_size: List[int]):
+        x = self.upsampling(self.conv1(x))
+        x = self.upsampling(self.conv2(x))
+        x = self.upsampling(self.conv3(x))
+        x = self.conv4(x)
+        x = self.conv5(x)
+        y = torch.split(x, split_size)
+        if self.pool == 'mean':
+            return [torch.mean(group, dim=0, keepdim=True) for group in y]
+        else:  # self.pool == 'max'
+            return [torch.max(group, dim=0, keepdim=True) for group in y]
 
 
 def weights_normal_init(model, dev=0.01):

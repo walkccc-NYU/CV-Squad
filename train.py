@@ -5,220 +5,193 @@ Authors: Viresh Ranjan, Udbhav, Thu Nguyen, Minh Hoai
 import argparse
 import json
 import os
-import random
 import time
-from os.path import exists, join
-from typing import List
 
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from PIL import Image
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from model import CountRegressor, Resnet50FPN, weights_normal_init
-from utils import MAPS, SCALES, Transform, extract_features
-
-dirname = os.path.dirname(__file__)
+from constants import LOGS_DIR, N_CHANNELS, SPLIT_DIR
+from dataset import collate_fn, train_set, val_set
+from model import CountRegressor, weights_normal_init
 
 parser = argparse.ArgumentParser(description='Few Shot Counting')
-parser.add_argument('-ts', '--test-split', type=str, default='val',
-                    choices=['train', 'test', 'val'], help='what data split to evaluate on')
 parser.add_argument('-ep', '--epochs', type=int, default=1,
                     help='number of training epochs')
 parser.add_argument('-g', '--gpu', type=int, default=0, help='GPU id')
 parser.add_argument('-lr', '--learning-rate', type=float,
                     default=1e-5, help='learning rate')
-parser.add_argument('--debug-mode', action='store_true', default=False)
-parser.add_argument('-sz', '--size', type=int, default=1)
+parser.add_argument('-bs', '--batch-size', type=int, default=1)
+parser.add_argument('-sz', '--size', type=int, default=None)
+parser.add_argument('-li', '--log-interval', type=int, default=1)
+parser.add_argument('-r', '--use-resize',
+                    action='store_true', default=False)
 args = parser.parse_args()
 
-DATA_DIR = './data'
-LOGS_DIR = './logsSave'
+train_loader = DataLoader(dataset=train_set, batch_size=args.batch_size,
+                          shuffle=True, num_workers=0, collate_fn=collate_fn)
+val_loader = DataLoader(dataset=val_set, batch_size=args.batch_size,
+                        shuffle=False, num_workers=0, collate_fn=collate_fn)
 
-# Constant directories
-anno_file = f'{DATA_DIR}/annotation_FSC147_384.json'
-images_dir = f'{DATA_DIR}/images_384_VarV2'
-gt_density_map_adaptive_dir = f'{DATA_DIR}/gt_density_map_adaptive_384_VarV2'
 
-if not exists(LOGS_DIR):
+with open(SPLIT_DIR) as f:
+    data = json.load(f)
+
+if not os.path.exists(LOGS_DIR):
     os.mkdir(LOGS_DIR)
+
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-criterion = nn.MSELoss().to(device)
+count_regressor = CountRegressor(N_CHANNELS, pool='mean').to(device)
+weights_normal_init(count_regressor, dev=0.001)
+optimizer = torch.optim.Adam(
+    count_regressor.parameters(), lr=args.learning_rate)
+criterion = torch.nn.MSELoss().to(device)
 
-resnet50_conv = Resnet50FPN().to(device)
-resnet50_conv.eval()
-
-N_SCALES = 3  # [1.0, 0.9, 1.1]
-N_FEATURES = 2  # [map3, map4]
-regressor = CountRegressor(N_SCALES * N_FEATURES, pool='mean').to(device)
-weights_normal_init(regressor, dev=0.001)
-regressor.train()
-
-optimizer = optim.Adam(regressor.parameters(), lr=args.learning_rate)
-
-with open(anno_file) as f:
-    annotations = json.load(f)
-
-with open(f'{DATA_DIR}/Train_Test_Val_FSC_147.json') as f:
-    data = json.load(f)
+min_mae, min_rmse = 1e7, 1e7
 
 
-def train():
+def train(epoch: int):
     print('Training on FSC147 train set data...')
 
-    image_ids: List[str] = data['train']  # ['2.jpg', '3.jpg', ...]
-    if args.debug_mode:
-        image_ids = image_ids[:args.size]
-    random.shuffle(image_ids)
-    train_mae: float = 0
-    train_rmse: float = 0
-    train_loss: float = 0
+    total_loss = 0.0
+    sum_absolute_error = 0.0
+    sum_square_error = 0.0
 
-    pbar = tqdm(image_ids)
-    for i, image_id in enumerate(pbar):
-        anno = annotations[image_id]
-        example_coordinates: List[List[int]] = anno['box_examples_coordinates']
-        bboxes: List[List[int]] = []  # coordinates of 3 bounding boxes
+    total_images: int = len(train_loader) * train_loader.batch_size
+    pbar = tqdm(train_loader, miniters=train_loader.batch_size)
+    for i, (image_features, densities, image_coords, split_size) in enumerate(pbar):
+        if args.size and i == args.size:
+            break
+        image_features = image_features.to(device)
+        predict_densities = count_regressor(image_features, split_size)
 
-        for coord in example_coordinates:
-            x_min, y_min = coord[0]  # top-left
-            x_max, y_max = coord[2]  # bottom-right
-            bboxes.append([x_min, y_min, x_max, y_max])
-
-        # load image
-        image_path = '{}/{}'.format(images_dir, image_id)
-        image = Image.open(image_path)
-        image.load()
-
-        # load density map
-        density_path = '{}/{}.npy'.format(gt_density_map_adaptive_dir,
-                                          image_id.split('.jpg')[0])
-        density = np.load(density_path).astype('float32')
-
-        # proportionally resize image, bboxes, density
-        image, bboxes, density = Transform({'image': image,
-                                            'bboxes': bboxes,
-                                            'density': density})
-
-        with torch.no_grad():
-            features = extract_features(
-                resnet50_conv,
-                image.unsqueeze(0),
-                bboxes.unsqueeze(0),
-                MAPS,
-                SCALES)
-        features.requires_grad = True
         optimizer.zero_grad()
-        output = regressor(features)
+        batch_loss = 0
 
-        # if image size isn't divisible by 8, gt size is slightly different from output size
-        if output.shape[2] != density.shape[2] or output.shape[3] != density.shape[3]:
-            orig_count = density.sum().detach().item()
-            density = F.interpolate(density, size=(
-                output.shape[2], output.shape[3]), mode='bilinear')
-            new_count = density.sum().detach().item()
-            if new_count > 0:
-                density = density * (orig_count / new_count)
-        loss = criterion(output, density)
-        loss.backward()
+        # Accumulate count error
+        for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
+            x_min, y_min, x_max, y_max = image_coord
+            target_predict_density = predict_density[0][0]
+            target_density = density[0][0].to(device)
+            if args.use_resize:
+                target_predict_density = target_predict_density[y_min:y_max, x_min:x_max]
+                target_density = target_density[y_min:y_max, x_min:x_max]
+
+            batch_loss += criterion(target_predict_density, target_density)
+
+            # Caculate count error
+            pred_count = torch.sum(target_predict_density).item()
+            gt_count = torch.sum(target_density).item()
+            count_error = abs(pred_count - gt_count)
+
+            # Accumulate count error
+            sum_absolute_error += count_error
+            sum_square_error += count_error**2
+
+        n_images: int = (i + 1) * train_loader.batch_size
+        batch_loss.backward()
+        total_loss += batch_loss.item()
         optimizer.step()
-        train_loss += loss.item()
-        pred_cnt = torch.sum(output).item()
-        gt_cnt = torch.sum(density).item()
-        cnt_err = abs(pred_cnt - gt_cnt)
-        train_mae += cnt_err
-        train_rmse += cnt_err ** 2
-        pbar.set_description('actual-predicted: {:6.1f}, {:6.1f}, error: {:6.1f}. Current MAE: {:5.2f}, RMSE: {:5.2f} Best VAL MAE: {:5.2f}, RMSE: {:5.2f}'.format(
-            gt_cnt, pred_cnt, abs(pred_cnt - gt_cnt), train_mae / (i + 1), (train_rmse / (i + 1))**0.5, best_mae, best_rmse))
-        print('')
-    train_loss = train_loss / len(image_ids)
-    train_mae = (train_mae / len(image_ids))
-    train_rmse = (train_rmse / len(image_ids))**0.5
-    return train_loss, train_mae, train_rmse
+
+        if i % args.log_interval == 0:
+            pbar.set_description('{:>7} Epoch: {} | {:>4}/{:>4} = {:>3}% | gt-predict: {:6.1f}, {:6.1f} | err: {:6.1f} | MAE: {:6.2f} | RMSE: {:6.2f} | Avg Loss: {:6.8f}\n'.format(
+                "[TRAIN]", epoch,
+                n_images, total_images, (n_images * 100 // total_images),
+                gt_count, pred_count, count_error,
+                sum_absolute_error / n_images,
+                (sum_square_error / n_images)**0.5,
+                total_loss / n_images))
+
+    return total_loss / n_images, \
+        sum_absolute_error / n_images, \
+        (sum_square_error / n_images)**0.5
 
 
-def validation():
-    print('Evaluation on {} data'.format(args.test_split))
+def validation(epoch: int):
+    print('\nEvaluating on validation data...')
 
-    image_ids = data['val']   # ['190.jpg', '191.jpg', ...]
-    if args.debug_mode:
-        image_ids = image_ids[:args.size]
+    sum_absolute_error = 0.0
+    sum_square_error = 0.0
 
-    SAE = 0  # sum of absolute errors
-    SSE = 0  # sum of square errors
+    total_images: int = len(val_loader) * val_loader.batch_size
+    pbar = tqdm(val_loader, miniters=val_loader.batch_size)
+    for i, (image_features, densities, image_coords, split_size) in enumerate(pbar):
+        if args.size and i == args.size:
+            break
+        image_features = image_features.to(device)
+        predict_densities = count_regressor(image_features, split_size)
 
-    pbar = tqdm(image_ids)
-    for i, image_id in enumerate(pbar):
-        anno = annotations[image_id]
-        example_coordinates: List[List[int]] = anno['box_examples_coordinates']
-        dots = np.array(anno['points'])
-        bboxes: List[List[int]] = []  # coordinates of 3 bounding boxes
+        # Accumulate count error
+        for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
+            x_min, y_min, x_max, y_max = image_coord
+            target_predict_density = predict_density[0][0]
+            target_density = density[0][0].to(device)
+            if args.use_resize:
+                target_predict_density = target_predict_density[y_min:y_max, x_min:x_max]
+                target_density = target_density[y_min:y_max, x_min:x_max]
 
-        for coord in example_coordinates:
-            x_min, y_min = coord[0]  # top-left
-            x_max, y_max = coord[2]  # bottom-right
-            bboxes.append([x_min, y_min, x_max, y_max])
+            # Caculate count error
+            pred_count = torch.sum(target_predict_density).item()
+            gt_count = torch.sum(target_density).item()
+            count_error = abs(pred_count - gt_count)
 
-        # load image
-        image_path = '{}/{}'.format(images_dir, image_id)
-        image = Image.open(image_path)
-        image.load()
+            # Accumulate count error
+            sum_absolute_error += count_error
+            sum_square_error += count_error**2
 
-        # proportionally resize image, bboxes
-        image, bboxes = Transform({'image': image, 'bboxes': bboxes})
-
-        with torch.no_grad():
-            features = extract_features(
-                resnet50_conv,
-                image.unsqueeze(0),
-                bboxes.unsqueeze(0),
-                MAPS,
-                SCALES)
-
-        gt_cnt = dots.shape[0]
-        output = regressor(features)
-        pred_cnt = output.sum().item()
-        err = abs(gt_cnt - pred_cnt)
-        SAE += err
-        SSE += err**2
-
-        pbar.set_description('{:<8}: actual-predicted: {:6d}, {:6.1f}, error: {:6.1f}. Current MAE: {:5.2f}, RMSE: {:5.2f}'.format(
-            image_id, gt_cnt, pred_cnt, abs(pred_cnt - gt_cnt), SAE / (i + 1), (SSE / (i + 1))**0.5))
-        print('')
-
-    print('On validation data, MAE: {:6.2f}, RMSE: {:6.2f}'.format(
-        SAE / (i + 1), (SSE / (i + 1))**0.5))
-    return SAE / len(image_ids), (SSE / len(image_ids))**0.5
+        n_images: int = (i + 1) * val_loader.batch_size
+        if i % args.log_interval == 0:
+            pbar.set_description('{:>7} Epoch: {} | {:>4}/{:>4} = {:>3}% | gt-predict: {:6.1f}, {:6.1f} | err: {:6.1f} | MAE: {:6.2f} | RMSE: {:6.2f} | Min MAE: {:6.2f} | Min RMSE: {:6.2f}\n'.format(
+                "[VAL]", epoch,
+                n_images, total_images, (n_images * 100 // total_images),
+                gt_count, pred_count, count_error,
+                sum_absolute_error / n_images,
+                (sum_square_error / n_images)**0.5,
+                min_mae, min_rmse))
+    return sum_absolute_error / n_images, (sum_square_error / n_images)**0.5
 
 
-best_mae, best_rmse = 1e7, 1e7
-stats = []
-for epoch in range(0, args.epochs):
-    start: int = time.time()
-    regressor.train()
-    train_loss, train_mae, train_rmse = train()
-    regressor.eval()
-    val_mae, val_rmse = validation()
-    stats.append((train_loss, train_mae, train_rmse, val_mae, val_rmse))
-    stats_file = join(LOGS_DIR, 'stats' + '.txt')
-    with open(stats_file, 'w') as f:
-        for s in stats:
-            f.write('%s\n' % ','.join([str(x) for x in s]))
-    if best_mae >= val_mae:
-        print(f"=== Val MAE ({val_mae}) <= Best MAE ({best_mae}) ===")
-        best_mae = val_mae
-        best_rmse = val_rmse
-        model_name = LOGS_DIR + '/' + 'FamNet.pth'
-        print(f"=== Write {model_name} ===")
-        torch.save(regressor.state_dict(), model_name)
+if __name__ == '__main__':
+    stats = []
 
-    epoch_duration: int = time.time() - start
+    for epoch in range(1, args.epochs + 1):
+        start: int = time.time()
+        count_regressor.train()
+        train_loss, train_mae, train_rmse = train(epoch)
 
-    print('Epoch {}, Avg. Epoch Loss: {} Train MAE: {} Train RMSE: {} Val MAE: {} Val RMSE: {} Best Val MAE: {} Best Val RMSE: {} '.format(
-        epoch+1,  stats[-1][0], stats[-1][1], stats[-1][2], stats[-1][3], stats[-1][4], best_mae, best_rmse))
-    print(f'{epoch_duration // 60}m : {epoch_duration % 60}s')
+        count_regressor.eval()
+        val_mae, val_rmse = validation(epoch)
+        stats.append((train_loss, train_mae, train_rmse, val_mae, val_rmse))
+
+        if val_mae <= min_mae:
+            print('\nVal MAE ({:6.2f}) <= Min MAE ({:6.2f})'.format(
+                val_mae, min_mae))
+            min_mae = val_mae
+            min_rmse = val_rmse
+            model_name = f'{LOGS_DIR}/FamNet.pth'
+            print(f'Write {model_name}...\n')
+            torch.save(count_regressor.state_dict(), model_name)
+
+        epoch_duration = int(time.time() - start)
+
+        print('Epoch {} ({}m : {}s), Avg. Epoch Loss: {:6.6f}'.format(
+            epoch, epoch_duration // 60, epoch_duration % 60, train_loss))
+        print('{:>8} | MAE: {:6.2f} | RMSE: {:6.2f}'.format(
+            'Train', train_mae, train_rmse))
+        print('{:>8} | MAE: {:6.2f} | RMSE: {:6.2f}'.format(
+            'Val', val_mae, val_rmse))
+        print('{:>8} | MAE: {:6.2f} | RMSE: {:6.2f}'.format(
+            'Min Val', min_mae, min_rmse))
+        print()
+
+        # Eager logging
+        with open(f'{LOGS_DIR}/lr{str(args.learning_rate)}_bs{train_loader.batch_size}_ep{args.epochs}.txt', 'w') as f:
+            f.write(
+                'Epoch | Train Loss, Train MAE, Train RMSE, Val MAE, VAL RMSE\n')
+            for i, stat in enumerate(stats):
+                s = '{:.8f}'.format(
+                    stat[0]) + ', ' + ', '.join(['{:4.2f}'.format(x) for x in stat[1:]])
+                f.write('{:>5} | {}'.format(i + 1, s))
+                f.write('\n')
