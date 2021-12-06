@@ -63,7 +63,7 @@ class CountRegressor(nn.Module):
         if self.pool == 'mean':
             return [torch.mean(group, dim=0, keepdim=True) for group in y]
         else:  # self.pool == 'max'
-            return [torch.max(group, dim=0, keepdim=True) for group in y]
+            return [torch.max(group, dim=0, keepdim=False) for group in y]
 
 
 def weights_normal_init(model, dev=0.01):
