@@ -61,8 +61,6 @@ if __name__ == '__main__':
     for split in [TRAIN, VAL, TEST]:
         print(f'=== Preprocessing {split} dataset... ===')
 
-        
-
         image_features_split_dir = f'{preprocessed_image_features_dir}/{split}'
         densities_split_dir = f'{preprocessed_densities_dir}/{split}'
 

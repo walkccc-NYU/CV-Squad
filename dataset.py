@@ -3,11 +3,10 @@ from typing import List
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 
 from constants import (IMAGE_COORDS_FILE, PREPROCESSED_DENSITIES_DIR,
-                       PREPROCESSED_IMAGE_FEATURES_DIR, SPLIT_DIR, TRAIN, VAL)
+                       PREPROCESSED_IMAGE_FEATURES_DIR, SPLIT_DIR)
 
 with open(SPLIT_DIR) as f:
     data = json.load(f)
@@ -23,7 +22,7 @@ class MyDataset(Dataset):
                                           if normalization else 'PREPROCESSED_IMAGE_FEATURES_DIR'
         preprocessed_densities_dir = f'{PREPROCESSED_DENSITIES_DIR}_{normalization}_normalized' \
                                      if normalization else 'PREPROCESSED_DENSITIES_DIR'
-        
+
         self.image_feature_paths = [f'{preprocessed_image_features_dir}/{split}/{i}.npy'
                                     for i in indices]
         self.density_paths = [f'{preprocessed_densities_dir}/{split}/{i}.npy'

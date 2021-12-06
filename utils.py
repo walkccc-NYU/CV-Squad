@@ -16,7 +16,7 @@ IM_NORM_STD = [0.229, 0.224, 0.225]
 def __get_conved_feature(image, conv, normalization):
     # Pad image so that it won't change size after convoluted
     h, w = conv.shape[2], conv.shape[3]
-    
+
     padded = F.pad(
         image, (int(w / 2), int((w - 1) / 2), int(h / 2), int((h - 1) / 2)))
     conved_feature = F.conv2d(padded, conv)
@@ -24,6 +24,7 @@ def __get_conved_feature(image, conv, normalization):
         box_max = conved_feature.max(3).values.max(2).values.max(1).values
         conved_feature = conved_feature / (box_max + 1e-8)
     return conved_feature
+
 
 def extract_features(
         feature_model: torch.nn.Module,
@@ -70,7 +71,8 @@ def extract_features(
                     __get_conved_feature(feature, feature_bbox, normalization))
         if use_interpolated_bboxes:
             feature_bboxes = torch.cat(feature_bboxes, dim=0)
-            conved_feature = __get_conved_feature(feature, feature_bboxes, normalization)
+            conved_feature = __get_conved_feature(
+                feature, feature_bboxes, normalization)
         else:
             conved_feature = torch.cat(conved_features, dim=1)
             if normalization == 'image_max':
@@ -97,7 +99,8 @@ def extract_features(
                 conved_feature = torch.cat(
                     conved_features, dim=1).permute([1, 0, 2, 3])
                 if normalization == 'image_max':
-                    conved_feature = conved_feature / (conved_feature.max() + 1e-8)
+                    conved_feature = conved_feature / \
+                        (conved_feature.max() + 1e-8)
             feature_scaled = torch.cat(
                 [feature_scaled, conved_feature], dim=1)
 

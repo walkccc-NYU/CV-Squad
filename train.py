@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from constants import LOGS_DIR, N_CHANNELS, SPLIT_DIR, TRAIN, VAL
-from dataset import collate_fn, MyDataset
+from dataset import MyDataset, collate_fn
 from model import CountRegressor, weights_normal_init
 
 parser = argparse.ArgumentParser(description='Few Shot Counting')
@@ -35,10 +35,12 @@ with open(SPLIT_DIR) as f:
     data = json.load(f)
 
 train_set = MyDataset(split=TRAIN,
-                      indices=[image_id.split('.jpg')[0] for image_id in data[TRAIN]],
+                      indices=[image_id.split('.jpg')[0]
+                               for image_id in data[TRAIN]],
                       normalization=args.normalization)
 val_set = MyDataset(split=VAL,
-                    indices=[image_id.split('.jpg')[0] for image_id in data[VAL]],
+                    indices=[image_id.split('.jpg')[0]
+                             for image_id in data[VAL]],
                     normalization=args.normalization)
 
 train_loader = DataLoader(dataset=train_set, batch_size=args.batch_size,
