@@ -28,6 +28,8 @@ parser.add_argument('-r', '--use-resize',
                     action='store_true', default=False)
 parser.add_argument('-n', '--normalization', type=str,
                     choices=['box_max', 'image_max'], default=None)
+parser.add_argument('-bn', '--use-batch-normalization',
+                    action='store_true', default=False)
 
 args = parser.parse_args()
 
@@ -54,7 +56,8 @@ if not os.path.exists(LOGS_DIR):
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-count_regressor = CountRegressor(N_CHANNELS, pool='mean').to(device)
+count_regressor = CountRegressor(
+    N_CHANNELS, pool='mean', use_bn=args.use_batch_normalization).to(device)
 weights_normal_init(count_regressor, dev=0.001)
 optimizer = torch.optim.Adam(
     count_regressor.parameters(), lr=args.learning_rate)
@@ -198,7 +201,13 @@ if __name__ == '__main__':
         print()
 
         # Eager logging
-        with open(f'{LOGS_DIR}/lr{str(args.learning_rate)}_bs{train_loader.batch_size}_ep{args.epochs}.txt', 'w') as f:
+        filename = f'{LOGS_DIR}/bs{train_loader.batch_size}' + \
+            f'_lr{str(args.learning_rate)}' + \
+            f'_ep{args.epochs}' + \
+            f'_norm{str(args.normalization)}' + \
+            f'_bn{args.use_batch_normalization}' + \
+            '.txt'
+        with open(filename, 'w') as f:
             f.write(
                 'Epoch | Train Loss, Train MAE, Train RMSE, Val MAE, VAL RMSE\n')
             for i, stat in enumerate(stats):

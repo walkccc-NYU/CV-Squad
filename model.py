@@ -25,7 +25,7 @@ class Resnet50FPN(nn.Module):
 
 
 class Conv(nn.Module):
-    def __init__(self, in_planes: int, out_planes: int, kernel_size: int, padding=0, use_bn=True):
+    def __init__(self, in_planes: int, out_planes: int, kernel_size: int, padding=0, use_bn=False):
         super(Conv, self).__init__()
         self.use_bn = use_bn
         self.conv = nn.Conv2d(in_planes, out_planes,
@@ -35,21 +35,22 @@ class Conv(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        # if self.use_bn:
-        #     x = self.bn(x)
+        if self.use_bn:
+            x = self.bn(x)
         x = self.relu(x)
         return x
 
 
 class CountRegressor(nn.Module):
-    def __init__(self, in_planes: int, pool='mean'):
+    def __init__(self, in_planes: int, pool='mean', use_bn=False):
         super(CountRegressor, self).__init__()
         self.pool = pool
         self.upsampling = nn.UpsamplingBilinear2d(scale_factor=2)
-        self.conv1 = Conv(in_planes, 196, 7, padding=3)
-        self.conv2 = Conv(196, 128, 5, padding=2)
-        self.conv3 = Conv(128, 64, 3, padding=1)
-        self.conv4 = Conv(64, 32, 1)
+        self.conv1 = Conv(in_planes, 196, 7, padding=3, use_bn=use_bn)
+        self.conv2 = Conv(196, 128, 5, padding=2, use_bn=use_bn)
+        self.conv3 = Conv(128, 64, 3, padding=1, use_bn=use_bn)
+        self.conv4 = Conv(64, 32, 1, use_bn=use_bn)
+        # do not use batch normalization for last layer
         self.conv5 = Conv(32, 1, 1, use_bn=False)
 
     def forward(self, x: torch.Tensor, split_size: List[int]):
