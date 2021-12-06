@@ -13,19 +13,24 @@ IM_NORM_MEAN = [0.485, 0.456, 0.406]
 IM_NORM_STD = [0.229, 0.224, 0.225]
 
 
-def __get_conved_feature(image, conv):
+def __get_conved_feature(image, conv, normalization):
     # Pad image so that it won't change size after convoluted
     h, w = conv.shape[2], conv.shape[3]
+    
     padded = F.pad(
         image, (int(w / 2), int((w - 1) / 2), int(h / 2), int((h - 1) / 2)))
-    return F.conv2d(padded, conv)
-
+    conved_feature = F.conv2d(padded, conv)
+    if normalization == 'box_max':
+        box_max = conved_feature.max(3).values.max(2).values.max(1).values
+        conved_feature = conved_feature / (box_max + 1e-8)
+    return conved_feature
 
 def extract_features(
         feature_model: torch.nn.Module,
         image: Tensor,  # [N, C, H, W] = [1, 3, 384, 408]
         bboxes: Tensor,  # [M, 4] = [1, 3, 4]
-        use_interpolated_bboxes=False):
+        use_interpolated_bboxes=False,
+        normalization=None):
     # Get features for the examples (N * M) * C * h * w
     # features_dict['map3'].shape = torch.Size([1, 512, 48, 51])
     # features_dict['map4'].shape = torch.Size([1, 1024, 24, 26])
@@ -62,12 +67,14 @@ def extract_features(
             else:
                 feature_bboxes.append(feature_bbox)
                 conved_features.append(
-                    __get_conved_feature(feature, feature_bbox))
+                    __get_conved_feature(feature, feature_bbox, normalization))
         if use_interpolated_bboxes:
             feature_bboxes = torch.cat(feature_bboxes, dim=0)
-            conved_feature = __get_conved_feature(feature, feature_bboxes)
+            conved_feature = __get_conved_feature(feature, feature_bboxes, normalization)
         else:
             conved_feature = torch.cat(conved_features, dim=1)
+            if normalization == 'image_max':
+                conved_feature = conved_feature / (conved_feature.max() + 1e-8)
 
         # [M, N, H, W]
         feature_scaled = conved_feature.permute([1, 0, 2, 3])
@@ -79,16 +86,18 @@ def extract_features(
                 interpolated = F.interpolate(feature_bboxes, size=(
                     h, w), mode='bilinear', align_corners=False)
                 conved_feature = __get_conved_feature(
-                    feature, interpolated).permute([1, 0, 2, 3])
+                    feature, interpolated, normalization).permute([1, 0, 2, 3])
             else:
                 conved_features = []
                 for feature_bbox in feature_bboxes:
                     interpolated = F.interpolate(feature_bbox, size=(
                         h, w), mode='bilinear', align_corners=False)
                     conved_features.append(__get_conved_feature(
-                        feature, interpolated))
+                        feature, interpolated, normalization))
                 conved_feature = torch.cat(
                     conved_features, dim=1).permute([1, 0, 2, 3])
+                if normalization == 'image_max':
+                    conved_feature = conved_feature / (conved_feature.max() + 1e-8)
             feature_scaled = torch.cat(
                 [feature_scaled, conved_feature], dim=1)
 

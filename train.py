@@ -11,8 +11,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from constants import LOGS_DIR, N_CHANNELS, SPLIT_DIR
-from dataset import collate_fn, train_set, val_set
+from constants import LOGS_DIR, N_CHANNELS, SPLIT_DIR, TRAIN, VAL
+from dataset import collate_fn, MyDataset
 from model import CountRegressor, weights_normal_init
 
 parser = argparse.ArgumentParser(description='Few Shot Counting')
@@ -26,16 +26,25 @@ parser.add_argument('-sz', '--size', type=int, default=None)
 parser.add_argument('-li', '--log-interval', type=int, default=1)
 parser.add_argument('-r', '--use-resize',
                     action='store_true', default=False)
+parser.add_argument('-n', '--normalization', type=str,
+                    choices=['box_max', 'image_max'], default=None)
+
 args = parser.parse_args()
+
+with open(SPLIT_DIR) as f:
+    data = json.load(f)
+
+train_set = MyDataset(split=TRAIN,
+                      indices=[image_id.split('.jpg')[0] for image_id in data[TRAIN]],
+                      normalization=args.normalization)
+val_set = MyDataset(split=VAL,
+                    indices=[image_id.split('.jpg')[0] for image_id in data[VAL]],
+                    normalization=args.normalization)
 
 train_loader = DataLoader(dataset=train_set, batch_size=args.batch_size,
                           shuffle=True, num_workers=0, collate_fn=collate_fn)
 val_loader = DataLoader(dataset=val_set, batch_size=args.batch_size,
                         shuffle=False, num_workers=0, collate_fn=collate_fn)
-
-
-with open(SPLIT_DIR) as f:
-    data = json.load(f)
 
 if not os.path.exists(LOGS_DIR):
     os.mkdir(LOGS_DIR)

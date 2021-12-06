@@ -18,10 +18,15 @@ with open(IMAGE_COORDS_FILE) as f:
 
 
 class MyDataset(Dataset):
-    def __init__(self, split, indices: List[int]):
-        self.image_feature_paths = [f'{PREPROCESSED_IMAGE_FEATURES_DIR}/{split}/{i}.npy'
+    def __init__(self, split, indices: List[int], normalization=None):
+        preprocessed_image_features_dir = f'{PREPROCESSED_IMAGE_FEATURES_DIR}_{normalization}_normalized' \
+                                          if normalization else 'PREPROCESSED_IMAGE_FEATURES_DIR'
+        preprocessed_densities_dir = f'{PREPROCESSED_DENSITIES_DIR}_{normalization}_normalized' \
+                                     if normalization else 'PREPROCESSED_DENSITIES_DIR'
+        
+        self.image_feature_paths = [f'{preprocessed_image_features_dir}/{split}/{i}.npy'
                                     for i in indices]
-        self.density_paths = [f'{PREPROCESSED_DENSITIES_DIR}/{split}/{i}.npy'
+        self.density_paths = [f'{preprocessed_densities_dir}/{split}/{i}.npy'
                               for i in indices]
         self.image_coords = [image_coords_dict[f'{i}.jpg'] for i in indices]
         assert len(self.image_feature_paths) == len(self.density_paths)
@@ -51,9 +56,3 @@ def collate_fn(batch):
 
     split_size = [i.shape[0] for i in image_features]
     return [torch.cat(image_features, dim=0), densities, image_coords, split_size]
-
-
-train_set = MyDataset(split=TRAIN,
-                      indices=[image_id.split('.jpg')[0] for image_id in data[TRAIN]])
-val_set = MyDataset(split=VAL,
-                    indices=[image_id.split('.jpg')[0] for image_id in data[VAL]])

@@ -21,6 +21,9 @@ parser.add_argument('-r', '--use-resized',
                     action='store_true', default=False)
 parser.add_argument('-ib', '--use-interpolated-bboxes',
                     action='store_true', default=False)
+parser.add_argument('-n', '--normalization', type=str,
+                    choices=['box_max', 'image_max'], default=None)
+
 args = parser.parse_args()
 
 
@@ -38,7 +41,12 @@ if __name__ == '__main__':
         with open(ANNOTATION_DIR) as f:
             annotations = json.load(f)
 
-    for _dir in [PREPROCESSED_IMAGE_FEATURES_DIR, PREPROCESSED_DENSITIES_DIR]:
+    preprocessed_image_features_dir = f'{PREPROCESSED_IMAGE_FEATURES_DIR}_{args.normalization}_normalized' \
+                                      if args.normalization else 'PREPROCESSED_IMAGE_FEATURES_DIR'
+    preprocessed_densities_dir = f'{PREPROCESSED_DENSITIES_DIR}_{args.normalization}_normalized' \
+                                 if args.normalization else 'PREPROCESSED_DENSITIES_DIR'
+
+    for _dir in [preprocessed_image_features_dir, preprocessed_densities_dir]:
         if not os.path.exists(_dir):
             os.mkdir(_dir)
 
@@ -53,8 +61,10 @@ if __name__ == '__main__':
     for split in [TRAIN, VAL, TEST]:
         print(f'=== Preprocessing {split} dataset... ===')
 
-        image_features_split_dir = f'{PREPROCESSED_IMAGE_FEATURES_DIR}/{split}'
-        densities_split_dir = f'{PREPROCESSED_DENSITIES_DIR}/{split}'
+        
+
+        image_features_split_dir = f'{preprocessed_image_features_dir}/{split}'
+        densities_split_dir = f'{preprocessed_densities_dir}/{split}'
 
         for _dir in [image_features_split_dir, densities_split_dir]:
             if not os.path.exists(_dir):
@@ -98,7 +108,8 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 features = extract_features(resnet50_conv, image.unsqueeze(
-                    0), bboxes, use_interpolated_bboxes=args.use_interpolated_bboxes)
+                    0), bboxes, use_interpolated_bboxes=args.use_interpolated_bboxes,
+                    normalization=args.normalization)
 
             image_num = image_id.split('.jpg')[0]
 
