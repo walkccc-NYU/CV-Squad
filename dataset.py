@@ -19,9 +19,9 @@ with open(IMAGE_COORDS_FILE) as f:
 class MyDataset(Dataset):
     def __init__(self, split, indices: List[int], normalization=None):
         preprocessed_image_features_dir = f'{PREPROCESSED_IMAGE_FEATURES_DIR}_{normalization}_normalized' \
-                                          if normalization else 'PREPROCESSED_IMAGE_FEATURES_DIR'
+                                          if normalization else f'{PREPROCESSED_IMAGE_FEATURES_DIR}'
         preprocessed_densities_dir = f'{PREPROCESSED_DENSITIES_DIR}_{normalization}_normalized' \
-                                     if normalization else 'PREPROCESSED_DENSITIES_DIR'
+                                     if normalization else f'{PREPROCESSED_DENSITIES_DIR}'
 
         self.image_feature_paths = [f'{preprocessed_image_features_dir}/{split}/{i}.npy'
                                     for i in indices]

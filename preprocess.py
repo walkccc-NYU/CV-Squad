@@ -42,9 +42,9 @@ if __name__ == '__main__':
             annotations = json.load(f)
 
     preprocessed_image_features_dir = f'{PREPROCESSED_IMAGE_FEATURES_DIR}_{args.normalization}_normalized' \
-                                      if args.normalization else 'PREPROCESSED_IMAGE_FEATURES_DIR'
+                                      if args.normalization else f'{PREPROCESSED_IMAGE_FEATURES_DIR}'
     preprocessed_densities_dir = f'{PREPROCESSED_DENSITIES_DIR}_{args.normalization}_normalized' \
-                                 if args.normalization else 'PREPROCESSED_DENSITIES_DIR'
+                                 if args.normalization else f'{PREPROCESSED_DENSITIES_DIR}'
 
     for _dir in [preprocessed_image_features_dir, preprocessed_densities_dir]:
         if not os.path.exists(_dir):
