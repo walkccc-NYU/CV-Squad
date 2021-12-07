@@ -1,3 +1,4 @@
+import collections
 import math
 from typing import Dict, List, Tuple
 
@@ -37,6 +38,8 @@ def extract_features(
     # features_dict['map4'].shape = torch.Size([1, 1024, 24, 26])
     features_dict: Dict[str, Tensor] = feature_model(image)
     all_feature_scaled = []
+    bbox_sizes_dict: Dict[str, List[Tuple[int, int]]] = \
+        collections.defaultdict(list)
 
     for feature_key, feature in features_dict.items():
         if feature_key == 'map3':
@@ -56,11 +59,14 @@ def extract_features(
         max_h = max(B[:, 3] - B[:, 1] + 1)
         max_w = max(B[:, 2] - B[:, 0] + 1)
 
+        bbox_size = (max_h.item(), max_w.item())
+        bbox_sizes_dict[feature_key].append(bbox_size)
+
         # feature that bound by bboxes
         feature_bboxes = []
         conved_features = []
         for x_min, y_min, x_max, y_max in B:
-            feature_bbox = feature[:, :, y_min:y_max, x_min:x_max]
+            feature_bbox = feature[:, :, y_min:y_max + 1, x_min:x_max + 1]
             if use_interpolated_bboxes:
                 interpolated = F.interpolate(feature_bbox, size=(
                     max_h, max_w), mode='bilinear', align_corners=False)
@@ -110,7 +116,7 @@ def extract_features(
             feature_scaled = F.interpolate(
                 feature_scaled, size=(h, w), mode='bilinear', align_corners=False)
         all_feature_scaled.append(feature_scaled)
-    return torch.cat(all_feature_scaled, dim=1)
+    return torch.cat(all_feature_scaled, dim=1), bbox_sizes_dict
 
 
 class ResizeImage:

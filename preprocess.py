@@ -1,13 +1,14 @@
 import argparse
+import collections
 import json
 import os
-from typing import Dict
+from typing import Dict, List
 
 import numpy as np
 import torch
 from PIL import Image
 
-from constants import (ANNOTATION_DIR, BBOXES_COORDS_FILE,
+from constants import (ANNOTATION_DIR, BBOXES_COORDS_FILE, CORRELATION_FILE,
                        ORIGINAL_DENSITIES_DIR, ORIGINAL_IMAGES_DIR,
                        POINTS_COUNT_FILE, PREPROCESSED_DENSITIES_DIR,
                        PREPROCESSED_IMAGE_FEATURES_DIR, RESIZED_DENSITIES_DIR,
@@ -48,7 +49,7 @@ if __name__ == '__main__':
 
     for _dir in [preprocessed_image_features_dir, preprocessed_densities_dir]:
         if not os.path.exists(_dir):
-            os.mkdir(_dir)
+            os.makedirs(_dir)
 
     with open(SPLIT_DIR) as f:
         data = json.load(f)
@@ -57,6 +58,8 @@ if __name__ == '__main__':
     resnet50_conv.eval()
 
     points_count_dict: Dict[str, int] = {}
+    correlation_dict: Dict[str, List[int]] = collections.defaultdict(
+        collections.defaultdict)
 
     for split in [TRAIN, VAL, TEST]:
         print(f'=== Preprocessing {split} dataset... ===')
@@ -105,9 +108,28 @@ if __name__ == '__main__':
             points_count_dict[image_id] = gt_count
 
             with torch.no_grad():
-                features = extract_features(resnet50_conv, image.unsqueeze(
-                    0), bboxes, use_interpolated_bboxes=args.use_interpolated_bboxes,
-                    normalization=args.normalization)
+                features, bbox_sizes_dict = extract_features(resnet50_conv, image.unsqueeze(
+                    0), bboxes, use_interpolated_bboxes=args.use_interpolated_bboxes, normalization=args.normalization)
+
+            features_by_channel = features.permute([1, 0, 2, 3])
+            _, box_count, H, W = features_by_channel.shape
+
+            features_by_channel = features.view(
+                features_by_channel.shape[0], -1)
+
+            map3 = features_by_channel[0]
+            map4 = features_by_channel[3]
+
+            correlation_dict[image_id]['map3_sum'] = map3.sum().item()
+            correlation_dict[image_id]['map3_squareSum'] = map3.square() \
+                .sum().item()
+            correlation_dict[image_id]['map4_sum'] = map4.sum().item()
+            correlation_dict[image_id]['map4_squareSum'] = map4.square() \
+                .sum().item()
+            correlation_dict[image_id]['bbox_sizes'] = bbox_sizes_dict
+            correlation_dict[image_id]['box_count'] = box_count
+            correlation_dict[image_id]['H'] = H
+            correlation_dict[image_id]['W'] = W
 
             image_num = image_id.split('.jpg')[0]
 
@@ -117,3 +139,6 @@ if __name__ == '__main__':
 
     with open(POINTS_COUNT_FILE, 'w') as f:
         f.write(json.dumps(points_count_dict))
+
+    with open(CORRELATION_FILE, 'w') as f:
+        f.write(json.dumps(correlation_dict))
