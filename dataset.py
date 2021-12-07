@@ -12,8 +12,8 @@ with open(SPLIT_DIR) as f:
     data = json.load(f)
 
 
-with open(IMAGE_COORDS_FILE) as f:
-    image_coords_dict = json.load(f)
+#with open(IMAGE_COORDS_FILE) as f:
+#    image_coords_dict = json.load(f)
 
 
 class MyDataset(Dataset):
@@ -27,14 +27,15 @@ class MyDataset(Dataset):
                                     for i in indices]
         self.density_paths = [f'{preprocessed_densities_dir}/{split}/{i}.npy'
                               for i in indices]
-        self.image_coords = [image_coords_dict[f'{i}.jpg'] for i in indices]
+        #self.image_coords = [image_coords_dict[f'{i}.jpg'] for i in indices]
         assert len(self.image_feature_paths) == len(self.density_paths)
         print(f'Total data in {split} split: {len(self.density_paths)}')
 
     def __getitem__(self, index: int):
         image_feature_path = self.image_feature_paths[index]
         density_path = self.density_paths[index]
-        image_coord = self.image_coords[index]
+        #image_coord = self.image_coords[index]
+        image_coord = None
         return np.load(image_feature_path).astype('float32'), \
             np.load(density_path).astype('float32'), \
             image_coord

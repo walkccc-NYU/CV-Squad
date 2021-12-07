@@ -61,7 +61,8 @@ count_regressor = CountRegressor(
 weights_normal_init(count_regressor, dev=0.001)
 optimizer = torch.optim.Adam(
     count_regressor.parameters(), lr=args.learning_rate)
-criterion = torch.nn.MSELoss().to(device)
+#criterion = torch.nn.MSELoss().to(device)
+criterion = torch.nn.MSELoss(reduction='sum').to(device)
 
 min_mae, min_rmse = 1e7, 1e7
 
@@ -86,7 +87,7 @@ def train(epoch: int):
 
         # Accumulate count error
         for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
-            x_min, y_min, x_max, y_max = image_coord
+            #x_min, y_min, x_max, y_max = image_coord
             target_predict_density = predict_density[0][0]
             target_density = density[0][0].to(device)
             if args.use_resize:
@@ -139,7 +140,7 @@ def validation(epoch: int):
 
         # Accumulate count error
         for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
-            x_min, y_min, x_max, y_max = image_coord
+            #x_min, y_min, x_max, y_max = image_coord
             target_predict_density = predict_density[0][0]
             target_density = density[0][0].to(device)
             if args.use_resize:
