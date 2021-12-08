@@ -5,10 +5,11 @@ from typing import List
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 from constants import (ANNOTATION_DIR, BBOXES_COORDS_FILE, IMAGE_COORDS_FILE,
-                       ORIGINAL_DENSITIES_DIR, ORIGINAL_IMAGES_DIR,
-                       RESIZED_DENSITIES_DIR, RESIZED_IMAGES_DIR)
+                       ORIGINAL_DENSITIES_DIR, ORIGINAL_IMAGES_DIR, PREPROCESSED_DENSITIES_DIR, PREPROCESSED_IMAGE_FEATURES_DIR,
+                       RESIZED_DENSITIES_DIR, RESIZED_IMAGES_DIR, TEST, TRAIN, VAL)
 
 parser = argparse.ArgumentParser(description='Few Show Counting Visualizer')
 parser.add_argument('-i', '--image-num', type=int, default=2)
@@ -39,7 +40,7 @@ if __name__ == '__main__':
 
     image_id = f'{args.image_num}.jpg'
 
-    fig, axs = plt.subplots(2, 2)
+    fig, axs = plt.subplots(3, 2)
     fig.suptitle(image_id)
 
     for i, (images_dir, densities_dir, bboxes) in enumerate(
@@ -68,6 +69,17 @@ if __name__ == '__main__':
         axs[i, 1].imshow(density)
         count = '{:.2f}'.format(np.sum(density))
         axs[i, 1].set_title(f'Count = {count}')
+
+    for split in [TRAIN, VAL, TEST]:
+        image_feature_path = f'{PREPROCESSED_IMAGE_FEATURES_DIR}/{split}/{args.image_num}.npy'
+        if not os.path.exists(image_feature_path):
+            continue
+        image_feature = np.load(image_feature_path).astype('float32')
+        axs[2, 0].imshow(image_feature[0][0])
+        axs[2, 1].imshow(image_feature[1][0])
+
+    axs[2, 0].set_title('Map 3 (box 1)')
+    axs[2, 1].set_title('Map 3 (box 2)')
 
     axs[0, 0].set_title('Original image')
     axs[1, 0].set_title('Resized image')

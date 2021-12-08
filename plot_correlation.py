@@ -30,10 +30,13 @@ image_ids = []
 avgs = []
 stds = []
 
+for image_id, avg, std in map3_idAvgStds[-5:]:
+    print(image_id, correlation_dict[image_id]['bbox_sizes'])
+
 for image_id, avg, std in map3_idAvgStds:
     image_ids.append(image_id)
     avgs.append(avg)
     stds.append(std)
 
-plt.errorbar(image_ids, avgs, stds, linestyle='None', marker='^')
-plt.show()
+# plt.errorbar(image_ids, avgs, stds, linestyle='None', marker='^')
+# plt.show()
