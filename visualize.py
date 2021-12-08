@@ -75,13 +75,16 @@ if __name__ == '__main__':
         if not os.path.exists(image_feature_path):
             continue
         image_feature = np.load(image_feature_path).astype('float32')
-        axs[2, 0].imshow(image_feature[0][0])
-        axs[2, 1].imshow(image_feature[1][0])
-
-    axs[2, 0].set_title('Map 3 (box 1)')
-    axs[2, 1].set_title('Map 3 (box 2)')
+        axs[1, 0].imshow(image_feature[0][0])
+        axs[1, 1].imshow(image_feature[1][0])
+        if image_feature.shape[0] > 2:
+            axs[2, 0].imshow(image_feature[2][0])
 
     axs[0, 0].set_title('Original image')
     axs[1, 0].set_title('Resized image')
+
+    axs[1, 0].set_title('Map 3 (box 1)')
+    axs[1, 1].set_title('Map 3 (box 2)')
+    axs[2, 0].set_title('Map 3 (box 3)')
 
     plt.show()
