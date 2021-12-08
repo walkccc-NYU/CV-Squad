@@ -39,4 +39,4 @@ for image_id, avg, std in map3_idAvgStds:
     stds.append(std)
 
 plt.errorbar(image_ids, avgs, stds, linestyle='None', marker='^')
-plt.show()
+# plt.show()

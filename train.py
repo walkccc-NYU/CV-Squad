@@ -57,7 +57,7 @@ if not os.path.exists(LOGS_DIR):
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 count_regressor = CountRegressor(
-    N_CHANNELS, pool='mean', use_bn=args.use_batch_normalization).to(device)
+    N_CHANNELS, pool='max', use_bn=args.use_batch_normalization).to(device)
 weights_normal_init(count_regressor, dev=0.001)
 optimizer = torch.optim.Adam(
     count_regressor.parameters(), lr=args.learning_rate)
@@ -87,10 +87,10 @@ def train(epoch: int):
 
         # Accumulate count error
         for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
-            #x_min, y_min, x_max, y_max = image_coord
             target_predict_density = predict_density[0][0]
             target_density = density[0][0].to(device)
             if args.use_resize:
+                x_min, y_min, x_max, y_max = image_coord
                 target_predict_density = target_predict_density[y_min:y_max, x_min:x_max]
                 target_density = target_density[y_min:y_max, x_min:x_max]
 
@@ -140,10 +140,10 @@ def validation(epoch: int):
 
         # Accumulate count error
         for predict_density, density, image_coord in zip(predict_densities, densities, image_coords):
-            #x_min, y_min, x_max, y_max = image_coord
             target_predict_density = predict_density[0][0]
             target_density = density[0][0].to(device)
             if args.use_resize:
+                x_min, y_min, x_max, y_max = image_coord
                 target_predict_density = target_predict_density[y_min:y_max, x_min:x_max]
                 target_density = target_density[y_min:y_max, x_min:x_max]
 

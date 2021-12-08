@@ -12,7 +12,7 @@ with open(SPLIT_DIR) as f:
     data = json.load(f)
 
 
-#with open(IMAGE_COORDS_FILE) as f:
+# with open(IMAGE_COORDS_FILE) as f:
 #    image_coords_dict = json.load(f)
 
 
