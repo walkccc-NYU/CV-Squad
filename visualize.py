@@ -65,15 +65,15 @@ if __name__ == '__main__':
 
     num_boxes = image_feature_align.shape[0]
 
-    fig, axs = plt.subplots(2, num_boxes + 2)
+    fig, axs = plt.subplots(num_boxes + 1, 4)
     fig.suptitle(image_id)
 
     predict_densities_align = count_regressor(
         torch.cat([image_feature_align], dim=0).to(device), [num_boxes])
-    predict_densities_ib = count_regressor_paper(image_feature_ib
-                                                 torch.cat([image_feature_ib], dim=0).to(device), [num_boxes])
+    predict_densities_ib = count_regressor_paper(
+        torch.cat([image_feature_ib], dim=0).to(device), [num_boxes])
 
-    fig.suptitle('Visualize feature maps')
+    fig.suptitle(image_id)
 
     axs[0, 0].imshow(image)
     axs[0, 0].set_title('Original image')
@@ -81,12 +81,16 @@ if __name__ == '__main__':
     axs[0, 1].imshow(original_density)
     axs[0, 1].set_title('Original density')
 
-    axs[1, 1].imshow(predict_densities[0][0][0].cpu().detach())
-    axs[1, 1].set_title('Predict density')
+    axs[0, 2].imshow(predict_densities_ib[0][0].cpu().detach())
+    axs[0, 2].set_title('Predict density (paper)')
+
+    axs[0, 3].imshow(predict_densities_align[0][0][0].cpu().detach())
+    axs[0, 3].set_title('Predict density (us)')
+
     for i in range(num_boxes):
-        axs[0, i + 2].imshow(image_feature[i][0])
-        axs[1, i + 2].imshow(image_feature[i][3])
-        axs[0, i + 2].set_title(f'Box {i} (Map 3)')
-        axs[1, i + 2].set_title(f'Box {i} (Map 4)')
+        axs[i + 1][0].imshow(image_feature_ib[i][0])
+        axs[i + 1][1].imshow(image_feature_ib[i][3])
+        axs[i + 1][2].imshow(image_feature_align[i][0])
+        axs[i + 1][3].imshow(image_feature_align[i][3])
 
     plt.show()
